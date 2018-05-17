@@ -1,0 +1,7 @@
+*.dep
+*.config
+*.user
+*.files
+*.includes
+*.creator*
+Make/
