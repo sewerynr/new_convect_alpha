@@ -150,7 +150,7 @@ void AlphaToPsi(const volScalarField & Alpha, volScalarField & Psi, dimensionedS
 //     }
 //}
 
-void snGradPsiFun(const volScalarField & Psi, surfaceScalarField & snGradPsi, scalar dx)
+void snGradPsiFun(const volScalarField & Psi, surfaceScalarField & snGradPsi)
 {
     const unallocLabelList& owner = Psi.mesh().owner();
     const unallocLabelList& neighbour = Psi.mesh().neighbour();
@@ -158,7 +158,8 @@ void snGradPsiFun(const volScalarField & Psi, surfaceScalarField & snGradPsi, sc
 
     forAll(owner, facei)
     {
-        snGradPsi[facei] = ( - Psi[owner[facei]] + Psi[neighbour[facei]])/dx;
+        double d = Foam::sqrt( Foam::sqr(Psi.mesh().cellCentres()[ owner[facei] ].x() - Psi.mesh().cellCentres()[ neighbour[facei] ].x()) + Foam::sqr(Psi.mesh().cellCentres()[ owner[facei] ].y() - Psi.mesh().cellCentres()[ neighbour[facei] ].y()) + Foam::sqr(Psi.mesh().cellCentres()[ owner[facei] ].z() - Psi.mesh().cellCentres()[ neighbour[facei] ].z()));
+        snGradPsi[facei] = (Psi[neighbour[facei]] - Psi[owner[facei]])/ d;               // owner zwraca numer komorki wlasciciela jezeli chce dostac wartosc np. wsp X tej komurki to musze ja wyciagnac z meszu
     }
 }
 
@@ -223,7 +224,7 @@ int main(int argc, char *argv[])
          }
     }
     AlphaZero == Alpha;
-    snGradPsiFun(Psi, snGradPsi, dx);
+    snGradPsiFun(Psi, snGradPsi);
     mGradPsiFace = Foam::mag(snGradPsi);
 //    Info << mGradPsiFace << endl;
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  ZAPIS  PO INICJALIZACJI !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -279,7 +280,7 @@ int main(int argc, char *argv[])
         LimitGradPsi2(mesh, Psi, mGradPsi, epsh.value(), PsiCritic);
         mGradPsiFace == linearInterpolate( mGradPsi );
 //        mGradPsiFace == Foam::mag(fvc::snGrad(Psi));
-        snGradPsiFun(Psi, snGradPsi, dx);
+        snGradPsiFun(Psi, snGradPsi);
         mGradPsiFaceCondition = Foam::mag(snGradPsi);
         phiR = Cf * AlphaFace*( scalar(1.0) - AlphaFace ) * ( (mGradPsiFaceCondition - scalar(1.0) ) * GradPsiFace / (mGradPsiFace + SMALL_NUMBER) ) & mesh.Sf();
 
@@ -298,7 +299,7 @@ int main(int argc, char *argv[])
         LimitGradPsi2(mesh, Psi, mGradPsi, epsh.value(), PsiCritic);
         mGradPsiFace == linearInterpolate( mGradPsi );
 //        mGradPsiFace == Foam::mag(fvc::snGrad(Psi));
-        snGradPsiFun(Psi, snGradPsi, dx);
+        snGradPsiFun(Psi, snGradPsi);
         mGradPsiFaceCondition = Foam::mag(snGradPsi);
         phiR = Cf * AlphaFace*( scalar(1.0) - AlphaFace ) * ( (mGradPsiFaceCondition - scalar(1.0) ) * GradPsiFace / (mGradPsiFace + SMALL_NUMBER) ) & mesh.Sf();
 
@@ -317,7 +318,7 @@ int main(int argc, char *argv[])
         LimitGradPsi2(mesh, Psi, mGradPsi, epsh.value(), PsiCritic);
         mGradPsiFace == linearInterpolate( mGradPsi );
 //        mGradPsiFace == Foam::mag(fvc::snGrad(Psi));
-        snGradPsiFun(Psi, snGradPsi, dx);
+        snGradPsiFun(Psi, snGradPsi);
         mGradPsiFaceCondition = Foam::mag(snGradPsi);
         phiR = Cf * AlphaFace*( scalar(1.0) - AlphaFace ) * ( (mGradPsiFaceCondition - scalar(1.0) ) * GradPsiFace / (mGradPsiFace + SMALL_NUMBER) ) & mesh.Sf();
 
