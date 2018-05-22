@@ -37,6 +37,20 @@
         Alpha
     );
 
+//    volScalarField Psi
+//    (
+//        IOobject
+//        (
+//            "Psi",
+//            runTime.timeName(),
+//            mesh,
+//            IOobject::NO_READ,
+//            IOobject::AUTO_WRITE
+//        ),
+//        mesh,
+//        dimensionedScalar("Psi", dimLength, scalar(0.0))
+//    );
+
     volScalarField Psi
     (
         IOobject
@@ -44,12 +58,14 @@
             "Psi",
             runTime.timeName(),
             mesh,
-            IOobject::NO_READ,
+            IOobject::MUST_READ,
             IOobject::AUTO_WRITE
         ),
         mesh,
         dimensionedScalar("Psi", dimLength, scalar(0.0))
     );
+
+
 
     volScalarField PsiZero
     (
