@@ -61,8 +61,8 @@
             IOobject::MUST_READ,
             IOobject::AUTO_WRITE
         ),
-        mesh,
-        dimensionedScalar("Psi", dimLength, scalar(0.0))
+        mesh//,
+        //dimensionedScalar("Psi", dimLength, scalar(0.0))
     );
 
 
@@ -74,11 +74,11 @@
             "PsiZero",
             runTime.timeName(),
             mesh,
-            IOobject::NO_READ,
+            IOobject::MUST_READ,
             IOobject::AUTO_WRITE
         ),
-        mesh,
-        dimensionedScalar("PsiZero", dimLength, scalar(0.0))
+        mesh
+//        dimensionedScalar("PsiZero", dimLength, scalar(0.0))
     );
 
     volVectorField U

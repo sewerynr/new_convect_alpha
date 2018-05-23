@@ -6,6 +6,7 @@
 //#include "surfaceInterpolationScheme.H"
 //#include "linear.H"
 #include "labelList.H"
+#include "fixedGradientFvPatchField.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 dimensionedScalar SMALL_NUMBER("small", dimless, 5e-16);
@@ -16,18 +17,17 @@ void psiInit(volScalarField& Psi)
     forAll(Psi.mesh().cellCentres(), cellI) // loop over cell centers
     {
         Psi[cellI] = Psi.mesh().cellCentres()[cellI].x();           //-0.5;
-
     //    Info << cellI << endl;
     }
-    forAll(Psi.mesh().boundary(), patchi)  // loop over all boundary patches
-    {
-        const fvPatch& patch = Psi.mesh().boundary()[patchi];
-        fvPatchScalarField& psiPatch = Psi.boundaryField()[patchi];
-        forAll(patch, faceId)       //  loop over c.v. centers of the given patch
-        {
-            psiPatch[faceId] = patch.Cf()[faceId].x();          //-0.5;
-        }
-    }
+//    forAll(Psi.mesh().boundary(), patchi)  // loop over all boundary patches
+//    {
+//        const fvPatch& patch = Psi.mesh().boundary()[patchi];
+//        fvPatchScalarField& psiPatch = Psi.boundaryField()[patchi];
+//        forAll(patch, faceId)       //  loop over c.v. centers of the given patch
+//        {
+//            psiPatch[faceId] = patch.Cf()[faceId].x();          //-0.5;
+//        }
+//    }
           //  Info << Psi << endl;
 }
 
@@ -122,15 +122,16 @@ void AlphaToPsi(const volScalarField & Alpha, volScalarField & Psi, dimensionedS
 
 void snGradPsiFun(const volScalarField & Psi, surfaceScalarField & snGradPsi)
 {
-    const unallocLabelList& owner = Psi.mesh().owner();
-    const unallocLabelList& neighbour = Psi.mesh().neighbour();
-    const vectorField& Sf = Psi.mesh().Sf();
+//    const unallocLabelList& owner = Psi.mesh().owner();
+//    const unallocLabelList& neighbour = Psi.mesh().neighbour();
+//    const vectorField& Sf = Psi.mesh().Sf();
 
-    forAll(owner, facei)
-    {
-        double d = Foam::sqrt( Foam::sqr(Psi.mesh().cellCentres()[ owner[facei] ].x() - Psi.mesh().cellCentres()[ neighbour[facei] ].x()) + Foam::sqr(Psi.mesh().cellCentres()[ owner[facei] ].y() - Psi.mesh().cellCentres()[ neighbour[facei] ].y()) + Foam::sqr(Psi.mesh().cellCentres()[ owner[facei] ].z() - Psi.mesh().cellCentres()[ neighbour[facei] ].z()));
-        snGradPsi[facei] = (Psi[neighbour[facei]] - Psi[owner[facei]])/ d;               // owner zwraca numer komorki wlasciciela jezeli chce dostac wartosc np. wsp X tej komurki to musze ja wyciagnac z meszu
-    }
+//    forAll(owner, facei)
+//    {
+//        double d = Foam::sqrt( Foam::sqr(Psi.mesh().cellCentres()[ owner[facei] ].x() - Psi.mesh().cellCentres()[ neighbour[facei] ].x()) + Foam::sqr(Psi.mesh().cellCentres()[ owner[facei] ].y() - Psi.mesh().cellCentres()[ neighbour[facei] ].y()) + Foam::sqr(Psi.mesh().cellCentres()[ owner[facei] ].z() - Psi.mesh().cellCentres()[ neighbour[facei] ].z()));
+//        snGradPsi[facei] = (Psi[neighbour[facei]] - Psi[owner[facei]])/ d;               // owner zwraca numer komorki wlasciciela jezeli chce dostac wartosc np. wsp X tej komurki to musze ja wyciagnac z meszu
+//    }
+    snGradPsi = fvc::snGrad(Psi);
 }
 
 void limitPhiR(surfaceScalarField & phiR, surfaceScalarField & mGradPsiFace)
@@ -143,6 +144,32 @@ void limitPhiR(surfaceScalarField & phiR, surfaceScalarField & mGradPsiFace)
             }
         }
 }
+
+
+void setBoundaryValues(volVectorField & f, const vector & value){
+    forAll(f.boundaryField(), bid)
+    {
+        f.boundaryField()[bid] = value;
+    }
+}
+
+template<typename T>
+void evaluateBoundaryConditions(GeometricField<T, fvPatchField, volMesh> & field){
+
+    forAll(field.boundaryField(), fid)
+    {
+
+        if( field.boundaryField()[fid].type() == "fixedGradient" )
+        {
+            fixedGradientFvPatchField<scalar>& bf = (fixedGradientFvPatchField<scalar>&)field.boundaryField()[fid];
+            bf == (bf.patchInternalField() + bf.gradient() / bf.patch().deltaCoeffs())();
+        }
+        else
+            field.boundaryField()[fid].evaluate();
+    }
+}
+
+
 
 int main(int argc, char *argv[])
 {
@@ -170,27 +197,35 @@ int main(int argc, char *argv[])
     dimensionedScalar dtauDimmless( "dtauDimmless", dimless, epsh.value() / scalar(1.0) );
     Info << "End\n" << endl;
     psiInit(PsiZero);
+//    PsiZero.boundaryField().evaluate();
+    evaluateBoundaryConditions(PsiZero);
+
     Psi == PsiZero;
-    AlphaAnalit = scalar(1.0)/(scalar(1.0)+Foam::exp(-PsiZero/epsh));
+
+
+//    PsiZero.correctBoundaryConditions();
+    AlphaAnalit == scalar(1.0)/(scalar(1.0)+Foam::exp(-PsiZero/epsh));
 //    AlphaAnalit =  scalar(0.5)*(scalar(1.0)+Foam::tanh(PsiZero/(scalar(2.)*epsh)));
 
+
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! INICJALIZACJA !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    forAll(mesh.cellCentres(), cellI )
-    {
-        Alpha[cellI] = scalar(0.5)*( scalar(1.0) + Foam::tanh(PsiZero[cellI]/(scalar(2.0)*epsh.value())) );  // 2 analit ~!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-//        Alpha[cellI] = 1.0/(1.0+Foam::exp(-PsiZero[cellI]/(2.0*epsh.value())));  // 1 analit ~!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    }
-    forAll(mesh.boundary(), patchi )
-    {
-         const fvPatch& patch = mesh.boundary()[patchi];
-         fvPatchScalarField& AlphaPatch = Alpha.boundaryField()[patchi];
-         fvPatchScalarField& PsiZeroPatch = PsiZero.boundaryField()[patchi];
-         forAll(patch, faceId)                       // lopp over faces centers belonging to a given patch
-         {
-            AlphaPatch[faceId] = scalar(0.5)*( scalar(1.0) + Foam::tanh(PsiZeroPatch[faceId]/(scalar(2.0)*epsh.value())) );   // 2 analit ~!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-//            Alpha[faceId] = 1.0/(1.0+Foam::exp(-PsiZero[faceId]/(2.0*epsh.value())));   // 1 analit ~!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-         }
-    }
+//    forAll(mesh.cellCentres(), cellI )
+//    {
+//        Alpha[cellI] = scalar(0.5)*( scalar(1.0) + Foam::tanh(PsiZero[cellI]/(scalar(2.0)*epsh.value())) );  // 2 analit ~!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+////        Alpha[cellI] = 1.0/(1.0+Foam::exp(-PsiZero[cellI]/(2.0*epsh.value())));  // 1 analit ~!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//    }
+//    forAll(mesh.boundary(), patchi )
+//    {
+//         const fvPatch& patch = mesh.boundary()[patchi];
+//         fvPatchScalarField& AlphaPatch = Alpha.boundaryField()[patchi];
+//         fvPatchScalarField& PsiZeroPatch = PsiZero.boundaryField()[patchi];
+//         forAll(patch, faceId)                       // lopp over faces centers belonging to a given patch
+//         {
+//            AlphaPatch[faceId] = scalar(0.5)*( scalar(1.0) + Foam::tanh(PsiZeroPatch[faceId]/(scalar(2.0)*epsh.value())) );   // 2 analit ~!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+////            Alpha[faceId] = 1.0/(1.0+Foam::exp(-PsiZero[faceId]/(2.0*epsh.value())));   // 1 analit ~!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//         }
+//    }
+    Alpha == scalar(0.5)*( scalar(1.0) + Foam::tanh(PsiZero/(scalar(2.0)*epsh)) );
     AlphaZero == Alpha;
     snGradPsiFun(Psi, snGradPsi);
     mGradPsiFace = Foam::mag(snGradPsi);
@@ -212,8 +247,12 @@ int main(int argc, char *argv[])
     forAll(mesh.boundary(), patchi )
     {
         const fvPatch& patch = mesh.boundary()[patchi];
+
         if( patch.type() == "empty" )
-        { continue; }
+        {
+            continue;
+        }
+
         fvPatchScalarField& AlphaPatch = Alpha.boundaryField()[patchi];
         const fvPatchScalarField& PZPatch = PsiZero.boundaryField()[patchi];
         fvPatchScalarField& PPatch = Psi.boundaryField()[patchi];
@@ -221,78 +260,95 @@ int main(int argc, char *argv[])
         forAll(patch, faceId)                       // lopp over faces centers belonging to a given patch
         {
             fB0 << patch.Cf()[faceId].x()
-                << " " << patch.Cf()[faceId].y()
-                << " " << std::setprecision(15) << AlphaPatch[faceId]
+//                << " " << patch.Cf()[faceId].y()
+//                << " " << std::setprecision(15) << AlphaPatch[faceId]
                 << " " << std::setprecision(15) << PZPatch[faceId]
                 << " " << std::setprecision(15) << PPatch[faceId]
-                << " " << std::setprecision(15) << AlphaAnalit[faceId]
+//                << " " << std::setprecision(15) << AlphaAnalit[faceId]
                 << std::endl;
         }
     }
-    double psiLimiter = Foam::max(Psi).value() -1.5*dx;
+    fB0.close();
 
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! CALKOWANE W PSEUDO CZASIE !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     for ( int i = 0; i < Ntau; i++ )
     {
         Info<< "reinitialization 3thO iter: " << i << endl;
 
-         AlphaOld == Alpha;
+        AlphaOld == Alpha;
         /*--------------------------------------------------- 1-RK-step --------------------------------------------------------*/
         AlphaFace == linearInterpolate(Alpha);
         AlphaToPsi(Alpha, Psi, epsh);
-        mGradPsi == Foam::mag(fvc::grad(Psi));
+//        evaluateBoundaryConditions(Psi);
+
+
         gradPsi == fvc::grad(Psi);
-        gradPsi.boundaryField().evaluate();
+        mGradPsi == Foam::mag(gradPsi);
+
+//        gradPsi.boundaryField().evaluate();
+        //        setBoundaryValues(gradPsi, vector(1, 0, 0));
         GradPsiFace == linearInterpolate( gradPsi );
         LimitGradPsi2(mesh, Psi, mGradPsi, epsh.value(), PsiCritic);
-        mGradPsiFace == linearInterpolate( mGradPsi );
-//        mGradPsiFace == Foam::mag(fvc::snGrad(Psi)); stare nie dzialajace w 2D
+
+
+//        mGradPsiFace == linearInterpolate( mGradPsi );
+        mGradPsiFace == Foam::mag(GradPsiFace); //mag z interpolowanego, a nie interpolacja z mag
+
         snGradPsiFun(Psi, snGradPsi);
         mGradPsiFaceCondition = Foam::mag(snGradPsi);
         phiR = Cf * AlphaFace*( scalar(1.0) - AlphaFace ) * ( (mGradPsiFaceCondition - scalar(1.0) ) * GradPsiFace / (mGradPsiFace + SMALL_NUMBER) ) & mesh.Sf();
 //        limitPhiR(phiR, mGradPsiFace);  // opcjonalnie
         k1 == Alpha + fvc::div(phiR)*dtau;
         k1 == Foam::min(Foam::max(k1, scalar(0.0)), scalar(1.0) );
-        k1.boundaryField().evaluate();
+//        evaluateBoundaryConditions(k1);
         k1f == linearInterpolate(k1);
 
         /*--------------------------------------------------- 2-RK-step --------------------------------------------------------*/
         AlphaToPsi(k1, Psi, epsh);
-//        Psi.boundaryField().evaluate();
+//        evaluateBoundaryConditions(Psi);
+
         mGradPsi == Foam::mag(fvc::grad(Psi));
         gradPsi == fvc::grad(Psi);
-        gradPsi.boundaryField().evaluate();
+//        setBoundaryValues(gradPsi, vector(1, 0, 0));
+//        gradPsi.boundaryField().evaluate();
         GradPsiFace == linearInterpolate( gradPsi );
         LimitGradPsi2(mesh, Psi, mGradPsi, epsh.value(), PsiCritic);
-        mGradPsiFace == linearInterpolate( mGradPsi );
+
+//        mGradPsiFace == linearInterpolate( mGradPsi );
+        mGradPsiFace == Foam::mag(GradPsiFace); //mag z interpolowanego, a nie interpolacja z mag
+
         snGradPsiFun(Psi, snGradPsi);           //  liczy grad dyfuzyjny miedzy dwoma sr komorek i przypisuje do pola snGradpsi
+
         mGradPsiFaceCondition = Foam::mag(snGradPsi);
 //        mGradPsiFaceCondition.boundaryField().evaluate();
         phiR = Cf * AlphaFace*( scalar(1.0) - AlphaFace ) * ( (mGradPsiFaceCondition - scalar(1.0) ) * GradPsiFace / (mGradPsiFace + SMALL_NUMBER) ) & mesh.Sf();
 //        limitPhiR(phiR, mGradPsiFace);   // opcjonalnie
         k2 == scalar(0.75)* Alpha + scalar(0.25)* k1 + scalar(0.25)* fvc::div(phiR)*dtau;
         k2 == Foam::min(Foam::max(k2, scalar(0.0)), scalar(1.0) );
-        k2.boundaryField().evaluate();
+//        evaluateBoundaryConditions(k2);
         k2f == linearInterpolate(k2);
 
         /*--------------------------------------------------- 3-RK-step --------------------------------------------------------*/
         AlphaToPsi(k2, Psi, epsh);
-//        Psi.boundaryField().evaluate();
+//        evaluateBoundaryConditions(Psi);
+
         mGradPsi == Foam::mag(fvc::grad(Psi));
         gradPsi == fvc::grad(Psi);
-        gradPsi.boundaryField().evaluate();
+//        setBoundaryValues(gradPsi, vector(1, 0, 0));
+//        gradPsi.boundaryField().evaluate();
         GradPsiFace == linearInterpolate( gradPsi );
         LimitGradPsi2(mesh, Psi, mGradPsi, epsh.value(), PsiCritic);
-        mGradPsiFace == linearInterpolate( mGradPsi );
+
+        //mGradPsiFace == linearInterpolate( mGradPsi );
+        mGradPsiFace == Foam::mag(GradPsiFace); //mag z interpolowanego, a nie interpolacja z mag
+
         snGradPsiFun(Psi, snGradPsi);
         mGradPsiFaceCondition = Foam::mag(snGradPsi);
         phiR = Cf * AlphaFace*( scalar(1.0) - AlphaFace ) * ( (mGradPsiFaceCondition - scalar(1.0) ) * GradPsiFace / (mGradPsiFace + SMALL_NUMBER) ) & mesh.Sf();
 //        limitPhiR(phiR, mGradPsiFace);    // opcjonalnie
         Alpha ==  scalar(100.0)/scalar(300.0)* Alpha + scalar(200.0)/scalar(300.0)* k2 + scalar(200.0)/scalar(300.0)*fvc::div(phiR)*dtau;
         Alpha == Foam::min(Foam::max(Alpha, scalar(0.0)), scalar(1.0) );
-        Alpha.boundaryField().evaluate();
-
-
+//        evaluateBoundaryConditions(Alpha);
 
         double norm1c = Foam::sum(Foam::mag(Alpha-AlphaOld)).value() / Alpha.size();
         Info << "Norma conv = " << norm1c << endl;
