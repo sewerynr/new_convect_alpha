@@ -65,7 +65,18 @@
         //dimensionedScalar("Psi", dimLength, scalar(0.0))
     );
 
-
+    surfaceScalarField PsiF
+    (
+        IOobject
+        (
+            "Psi",
+            runTime.timeName(),
+            mesh,
+            IOobject::NO_READ,
+            IOobject::AUTO_WRITE
+        ),
+        linearInterpolate(Psi)
+    );
 
     volScalarField PsiZero
     (
@@ -227,6 +238,19 @@
         IOobject
         (
             "gradPsi",
+            runTime.timeName(),
+            mesh,
+            IOobject::MUST_READ,
+            IOobject::AUTO_WRITE
+        ),
+        mesh
+    );
+
+    volVectorField gradPsiTemp
+    (
+        IOobject
+        (
+            "gradPsiTemp",
             runTime.timeName(),
             mesh,
             IOobject::NO_READ,
