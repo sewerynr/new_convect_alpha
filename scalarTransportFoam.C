@@ -17,7 +17,7 @@ void psiInit(volScalarField& Psi)
 {
     forAll(Psi.mesh().cellCentres(), cellI) // loop over cell centers
     {
-        Psi[cellI] = Psi.mesh().cellCentres()[cellI].x() -0.5;
+        Psi[cellI] = -Psi.mesh().cellCentres()[cellI].x() + 0.5;
     }
 //    forAll(Psi.mesh().boundary(), patchi)  // loop over all boundary patches
 //    {
@@ -213,7 +213,7 @@ int main(int argc, char *argv[])
     int Ntau = runTime.controlDict().lookupOrDefault("Ntau", 0);
     int PsiCritic = runTime.controlDict().lookupOrDefault("PsiCritic", 30);
 
-    scalar dx = scalar(1.0)/scalar(128.0);
+    scalar dx = scalar(1.0)/scalar(129.0);
     dimensionedScalar epsh( "epsh", dimLength, dx / scalar(4.0) );
     dimensionedScalar dtau( "dtau", dimTime, epsh.value() / scalar(1.0) );
     dimensionedScalar dtauDimmless( "dtauDimmless", dimless, epsh.value() / scalar(1.0) );
@@ -300,12 +300,13 @@ int main(int argc, char *argv[])
         AlphaFace == linearInterpolate(Alpha);
         AlphaToPsi(Alpha, Psi, epsh);
 //        evaluateBoundaryConditions(Psi);
+                Psi.boundaryField() == PsiZero.boundaryField();
 
         gradPsi == fvc::grad(Psi);
         mGradPsi == Foam::mag(gradPsi);
 //        setBoundaryValues(gradPsi, vector(1, 0, 0));
 //        gradPsi.boundaryField().evaluate();
-        evaluateBoundaryConditions(gradPsi);
+//        evaluateBoundaryConditions(gradPsi);
         GradPsiFace == linearInterpolate( gradPsi );
 
 //        mGradPsiFace == linearInterpolate( mGradPsi );
@@ -321,17 +322,19 @@ int main(int argc, char *argv[])
         k1 == Alpha + fvc::div(phiR)*dtau;
         k1 == Foam::min(Foam::max(k1, scalar(0.0)), scalar(1.0) );
 //        evaluateBoundaryConditions(k1);
+                k1.boundaryField() == AlphaAnalit.boundaryField();
         k1f == linearInterpolate(k1);
 
         /*--------------------------------------------------- 2-RK-step --------------------------------------------------------*/
         AlphaToPsi(k1, Psi, epsh);
 //        evaluateBoundaryConditions(Psi);
+                Psi.boundaryField() == PsiZero.boundaryField();
 
         mGradPsi == Foam::mag(fvc::grad(Psi));
         gradPsi == fvc::grad(Psi);
 //        setBoundaryValues(gradPsi, vector(1, 0, 0));
 //        gradPsi.boundaryField().evaluate();
-        evaluateBoundaryConditions(gradPsi);
+//        evaluateBoundaryConditions(gradPsi);
 //        LimitGradPsi2(mesh, Psi, mGradPsi, epsh.value(), PsiCritic);
         GradPsiFace == linearInterpolate( gradPsi );
 //        mGradPsiFace == linearInterpolate( mGradPsi );
@@ -344,22 +347,25 @@ int main(int argc, char *argv[])
         LimitMGradPsiFaceCondition(mesh, PsiF, mGradPsiFaceCondition, epsh.value(), PsiCritic);
 
 //        mGradPsiFaceCondition.boundaryField().evaluate();
-        phiR = Cf * AlphaFace*( scalar(1.0) - AlphaFace ) * ( (mGradPsiFaceCondition - scalar(1.0) ) * GradPsiFace / (mGradPsiFace + SMALL_NUMBER) ) & mesh.Sf();
+        phiR = Cf * k1f*( scalar(1.0) - k1f ) * ( (mGradPsiFaceCondition - scalar(1.0) ) * GradPsiFace / (mGradPsiFace + SMALL_NUMBER) ) & mesh.Sf();
         limitPhiR(phiR, mGradPsiFace);   // opcjonalnie
         k2 == scalar(0.75)* Alpha + scalar(0.25)* k1 + scalar(0.25)* fvc::div(phiR)*dtau;
         k2 == Foam::min(Foam::max(k2, scalar(0.0)), scalar(1.0) );
 //        evaluateBoundaryConditions(k2);
+                k2.boundaryField() == AlphaAnalit.boundaryField();
+
         k2f == linearInterpolate(k2);
 
         /*--------------------------------------------------- 3-RK-step --------------------------------------------------------*/
         AlphaToPsi(k2, Psi, epsh);
 //        evaluateBoundaryConditions(Psi);
+                Psi.boundaryField() == PsiZero.boundaryField();
 
         mGradPsi == Foam::mag(fvc::grad(Psi));
         gradPsi == fvc::grad(Psi);
 //        setBoundaryValues(gradPsi, vector(1, 0, 0));
 //        gradPsi.boundaryField().evaluate();
-        evaluateBoundaryConditions(gradPsi);
+//        evaluateBoundaryConditions(gradPsi);
         GradPsiFace == linearInterpolate( gradPsi );
 
         //mGradPsiFace == linearInterpolate( mGradPsi );
@@ -370,7 +376,7 @@ int main(int argc, char *argv[])
         mGradPsiFaceCondition = Foam::mag(snGradPsi);
         LimitMGradPsiFaceCondition(mesh, PsiF, mGradPsiFaceCondition, epsh.value(), PsiCritic);
 
-        phiR = Cf * AlphaFace*( scalar(1.0) - AlphaFace ) * ( (mGradPsiFaceCondition - scalar(1.0) ) * GradPsiFace / (mGradPsiFace + SMALL_NUMBER) ) & mesh.Sf();
+        phiR = Cf * k2f*( scalar(1.0) - k2f ) * ( (mGradPsiFaceCondition - scalar(1.0) ) * GradPsiFace / (mGradPsiFace + SMALL_NUMBER) ) & mesh.Sf();
         vector(1.,0.,0.);
         limitPhiR(phiR, mGradPsiFace);    // opcjonalnie
         Alpha ==  scalar(100.0)/scalar(300.0)* Alpha + scalar(200.0)/scalar(300.0)* k2 + scalar(200.0)/scalar(300.0)*fvc::div(phiR)*dtau;
@@ -382,6 +388,9 @@ int main(int argc, char *argv[])
         double norm1 = Foam::sum(Foam::mag(AlphaAnalit-Alpha)).value() / Alpha.size();
         Info << "Norma 1 analit = " << norm1 << endl;
         fconv << i << "   " << norm1 << std::endl;
+
+        Alpha.boundaryField() == AlphaAnalit.boundaryField();
+        Psi.boundaryField() == PsiZero.boundaryField();
     }
 
 //    runTime.write();
