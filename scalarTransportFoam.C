@@ -140,9 +140,7 @@ void snGradFunPsi(const volScalarField & field, surfaceScalarField & result)
         vector Cdiff = mesh.cellCentres()[ocell] - mesh.cellCentres()[ncell];
         vector nf = mesh.Sf()[facei];
         nf = nf / mag(nf);
-
         result[facei] = Vdiff * (Cdiff & nf) / (Cdiff & Cdiff);
-        //result[facei] = Vdiff * 128;
     }
     forAll(field.boundaryField(), patchId)
     {
@@ -153,10 +151,178 @@ void snGradFunPsi(const volScalarField & field, surfaceScalarField & result)
                 snGradPsiPach[faceId] = 0.;
             }
     }
-
 // to samo ! co wyzej
 //    result == fvc::snGrad(field);
 }
+
+tmp< surfaceScalarField > linearScalarInterpolate(const volScalarField & vf)
+{
+    const fvMesh & mesh = vf.mesh();
+    const unallocLabelList& owner = mesh.owner();
+    const unallocLabelList& neighbour = mesh.neighbour();
+
+    tmp< surfaceScalarField > tsf
+    (
+        new surfaceScalarField
+        (
+            IOobject
+            (
+                "interpolate("+vf.name()+')',
+                vf.instance(),
+                vf.db()
+            ),
+            mesh,
+            vf.dimensions()
+        )
+    );
+    surfaceScalarField & result = tsf();
+
+
+    forAll(result, facei)
+    {
+        label ocell = owner[facei];
+        label ncell = neighbour[facei];
+
+        vector ofc = mesh.cellCentres()[ocell] - mesh.Cf()[facei];
+        vector nfc = mesh.cellCentres()[ncell] - mesh.Cf()[facei];
+
+        scalar oWeight = mag(ofc) / ( mag(ofc) + mag(nfc));
+        scalar nWeight = 1.0 - oWeight;
+
+        result[facei] = oWeight * vf[ocell] + nWeight * vf[ncell];
+    }
+
+
+    //Wymuszamy wiedząc że na brzegu jest zeroGrad
+    forAll(vf.boundaryField(), patchId)
+    {
+        //const fvPatchScalarField
+        const typename volScalarField::PatchFieldType & vfPatch = vf.boundaryField()[patchId];
+
+        //const fvsPatchScalarField
+        typename surfaceScalarField::PatchFieldType& sfPatch = result.boundaryField()[patchId];
+
+        sfPatch = vfPatch.patchInternalField();
+    }
+
+    return tsf;
+}
+
+tmp< surfaceVectorField > linearVectorInterpolate(const volVectorField & vf)
+{
+    const fvMesh & mesh = vf.mesh();
+    const unallocLabelList& owner = mesh.owner();
+    const unallocLabelList& neighbour = mesh.neighbour();
+
+    tmp< surfaceVectorField > tsf
+    (
+        new surfaceVectorField
+        (
+            IOobject
+            (
+                "interpolate("+vf.name()+')',
+                vf.instance(),
+                vf.db()
+            ),
+            mesh,
+            vf.dimensions()
+        )
+    );
+    surfaceVectorField & result = tsf();
+
+
+    forAll(result, facei)
+    {
+        label ocell = owner[facei];
+        label ncell = neighbour[facei];
+
+        vector ofc = mesh.cellCentres()[ocell] - mesh.Cf()[facei];
+        vector nfc = mesh.cellCentres()[ncell] - mesh.Cf()[facei];
+
+        scalar oWeight = mag(ofc) / ( mag(ofc) + mag(nfc));
+        scalar nWeight = 1.0 - oWeight;
+
+        result[facei] = oWeight * vf[ocell] + nWeight * vf[ncell];
+    }
+
+
+    //Wymuszamy wiedząc że na brzegu jest zeroGrad
+    forAll(vf.boundaryField(), patchId)
+    {
+
+        const typename volVectorField::PatchFieldType & vfPatch = vf.boundaryField()[patchId];
+
+
+        typename surfaceVectorField::PatchFieldType& sfPatch = result.boundaryField()[patchId];
+
+        sfPatch = vfPatch.patchInternalField();
+    }
+
+    return tsf;
+}
+
+tmp<volVectorField> gaussGrad(const volScalarField & vf)
+{
+    const fvMesh & mesh = vf.mesh();
+    const unallocLabelList& owner = mesh.owner();
+    const unallocLabelList& neighbour = mesh.neighbour();
+
+    tmp<surfaceScalarField> surfTmp = linearScalarInterpolate(vf);
+    surfaceScalarField & surfaceInterpolation = surfTmp();
+
+    tmp<volVectorField> tmpResult
+    (
+        new volVectorField
+        (
+            IOobject
+            (
+                "gaussGrad("+vf.name()+')',
+                vf.instance(),
+                vf.db()
+            ),
+            mesh,
+            vf.dimensions() / dimLength
+        )
+    );
+
+    volVectorField & result = tmpResult();
+    result = vector(0.0, 0.0, 0.0);
+
+    forAll(surfaceInterpolation, facei)
+    {
+        label ocell = owner[facei];
+        label ncell = neighbour[facei];
+
+        vector sf = mesh.Sf()[facei];
+        result[ocell] += surfaceInterpolation[facei] * sf;
+        result[ncell] -= surfaceInterpolation[facei] * sf;
+    }
+
+    forAll(result, celli)
+    {
+        result[celli] /= mesh.V()[celli];
+    }
+//    result = result / mesh.V().field();
+
+    // Nic nie robimy na brzegach - gradient nie zdefiniowany
+    // dla green-gaussa. Chamsko damy 0 value dla gradientu, ale
+    // nie powinniśmy nigdzie po drodze korzystać z tych wartości
+    forAll(result.boundaryField(), patchId)
+    {
+            fvPatchVectorField& resultPatch = result.boundaryField()[patchId];
+
+            //zakładamy że pochodna gradientu też jest 0 - bierzemy wartości z centrów
+            resultPatch = resultPatch.patchInternalField()();
+
+//            forAll(resultPatch.patch(), faceId)
+//            {
+//                resultPatch[faceId] = vector(0.0, 0.0, 0.0);
+//            }
+    }
+
+    return tmpResult;
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -180,7 +346,7 @@ int main(int argc, char *argv[])
     int PsiCritic = runTime.controlDict().lookupOrDefault("PsiCritic", 30);
 
     scalar dx = scalar(1.0)/scalar(128.0);
-    dimensionedScalar epsh( "epsh", dimLength, dx / scalar(2.0) );
+    dimensionedScalar epsh( "epsh", dimLength, dx / scalar(4.0) );
     dimensionedScalar dtau( "dtau", dimTime, epsh.value() / scalar(2.0) );
 //    dimensionedScalar dtauDimmless( "dtauDimmless", dimless, epsh.value() / scalar(1.0) );
     Info << "End\n" << endl;
@@ -262,20 +428,31 @@ int main(int argc, char *argv[])
         AlphaOld == Alpha;
 //        AlphaOld.boundaryField() = Alpha.boundaryField();
 
-        AlphaFace == linearInterpolate(Alpha);
+        //AlphaFace == linearInterpolate(Alpha);
+        AlphaFace == linearScalarInterpolate(Alpha);
+
+
         AlphaToPsi(Alpha, Psi, epsh);
         //PsiF == linearInterpolate(Psi);
         //Psi.boundaryField() == PsiZero.boundaryField();
-        gradPsi = fvc::grad(Psi);
-        setInternalToBoundary(gradPsi);
+
+
+//        gradPsi = fvc::grad(Psi);
+//        setInternalToBoundary(gradPsi);
+        gradPsi = gaussGrad(Psi);
+
 //        gradPsi.boundaryField().evaluate();
 //        extrapolateToBoundaries(gradPsi);
 
-        GradPsiFace == linearInterpolate( gradPsi );
+        //GradPsiFace == linearInterpolate( gradPsi );
+        GradPsiFace == linearVectorInterpolate(gradPsi );
 
         mGradPsi = Foam::mag(gradPsi);
         //LimitGradPsi(mesh, Psi, mGradPsi, epsh.value(), PsiCritic);
-        mGradPsiFace == linearInterpolate( mGradPsi );
+
+        //mGradPsiFace == linearInterpolate( mGradPsi );
+        mGradPsiFace == linearScalarInterpolate( mGradPsi );
+
 //!!!!!!!!!!!!!!!!!!!!!!
         snGradFunPsi(Psi, snGradPsi);
         mGradPsiFaceCondition = Foam::mag(snGradPsi);
@@ -285,24 +462,31 @@ int main(int argc, char *argv[])
         k1 == Alpha + fvc::div(phiR)*dtau;
         k1 == Foam::min(Foam::max(k1, scalar(0.0)), scalar(1.0) );
 //        k1.boundaryField() == AlphaZero.boundaryField();
-        k1f == linearInterpolate(k1);
-
-
-
+//        k1f == linearInterpolate(k1);
+        k1f == linearScalarInterpolate(k1);
 
 
         AlphaToPsi(k1, Psi, epsh);
         //PsiF == linearInterpolate(Psi);
         //Psi.boundaryField() == PsiZero.boundaryField();
-        gradPsi = fvc::grad(Psi);
-        setInternalToBoundary(gradPsi);
+
+//        gradPsi = fvc::grad(Psi);
+//        setInternalToBoundary(gradPsi);
+        gradPsi = gaussGrad(Psi);
+
+
 //        gradPsi.boundaryField().evaluate();
 //        extrapolateToBoundaries(gradPsi);
 
-        GradPsiFace == linearInterpolate( gradPsi );
+        //GradPsiFace == linearInterpolate( gradPsi );
+        GradPsiFace == linearVectorInterpolate( gradPsi );
+
+
         mGradPsi = Foam::mag(gradPsi);
         //LimitGradPsi(mesh, Psi, mGradPsi, epsh.value(), PsiCritic);
-        mGradPsiFace == linearInterpolate( mGradPsi );
+
+        //mGradPsiFace == linearInterpolate( mGradPsi );
+        mGradPsiFace == linearScalarInterpolate( mGradPsi );
 
         snGradFunPsi(Psi, snGradPsi);
         mGradPsiFaceCondition = Foam::mag(snGradPsi);
@@ -312,24 +496,30 @@ int main(int argc, char *argv[])
         k2 == scalar(0.75)* Alpha + scalar(0.25)* k1 + scalar(0.25)* fvc::div(phiR)*dtau;
         k2 == Foam::min(Foam::max(k2, scalar(0.0)), scalar(1.0) );
 //        k2.boundaryField() == AlphaZero.boundaryField();
-        k2f == linearInterpolate(k2);
-
-
+        //k2f == linearInterpolate(k2);
+        k2f == linearScalarInterpolate(k2);
 
 
 
         AlphaToPsi(k2, Psi, epsh);
         //PsiF == linearInterpolate(Psi);
         //Psi.boundaryField() == PsiZero.boundaryField();
-        gradPsi = fvc::grad(Psi);
-        setInternalToBoundary(gradPsi);
+
+//        gradPsi = fvc::grad(Psi);
+//        setInternalToBoundary(gradPsi);
+        gradPsi = gaussGrad(Psi);
+
 //        gradPsi.boundaryField().evaluate();
 //        extrapolateToBoundaries(gradPsi);
 
-        GradPsiFace == linearInterpolate( gradPsi );
+        //GradPsiFace == linearInterpolate( gradPsi );
+        GradPsiFace == linearVectorInterpolate( gradPsi );
+
         mGradPsi = Foam::mag(gradPsi);
         //LimitGradPsi(mesh, Psi, mGradPsi, epsh.value(), PsiCritic);
-        mGradPsiFace == linearInterpolate( mGradPsi );
+
+//        mGradPsiFace == linearInterpolate( mGradPsi );
+        mGradPsiFace == linearScalarInterpolate( mGradPsi );
 
         snGradFunPsi(Psi, snGradPsi);
         mGradPsiFaceCondition = Foam::mag(snGradPsi);
@@ -356,6 +546,10 @@ int main(int argc, char *argv[])
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ZAPIS PO OBLICZENIACH !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 //     snGradFunPsi(Psi, snGradPsi);
 //     Info << snGradPsi << endl;
+//gradPsi == fvc::grad(Psi);
+//Info << gradPsi << endl;
+
+
 
         forAll(mesh.cellCentres(), cellI )
         {
@@ -365,7 +559,7 @@ int main(int argc, char *argv[])
           << " " << std::setprecision(26) << AlphaAnalit[cellI]
           << " " << std::setprecision(26) << PsiZero[cellI]
           << " " << std::setprecision(26) << Psi[cellI]
-          << " " << std::setprecision(26) << mGradPsi[cellI]
+          << " " << std::setprecision(26) << gradPsi[cellI].y()
           << " " << std::setprecision(26) << AlphaZero[cellI]
           << std::endl;
         }
