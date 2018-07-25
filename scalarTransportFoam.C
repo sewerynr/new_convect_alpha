@@ -41,6 +41,16 @@ void AlphaToPsi(const volScalarField & Alpha, volScalarField & Psi, dimensionedS
 //    psiInit(Psi);
 }
 
+scalar funInitT4( double PsiZero, const dimensionedScalar& epsH, double par, const double x,const double y, const double z )
+{
+    const static scalar R = 0.15;
+    scalar eps = epsH.value();
+    scalar ret = 0.0;
+    scalar r = Foam::sqrt(x*x + (y-0.25)*(y-0.25));
+    return 1 - 0.5*(1.0 + Foam::tanh((r-R)/2/eps));
+}
+
+
 //!!!!!!!!!!!!!!!!!!!
 void psiInit(volScalarField& Psi)
 {
@@ -500,11 +510,9 @@ int main(int argc, char *argv[])
         k2f == linearScalarInterpolate(k2);
 
 
-
         AlphaToPsi(k2, Psi, epsh);
         //PsiF == linearInterpolate(Psi);
         //Psi.boundaryField() == PsiZero.boundaryField();
-
 //        gradPsi = fvc::grad(Psi);
 //        setInternalToBoundary(gradPsi);
         gradPsi = gaussGrad(Psi);
@@ -544,7 +552,7 @@ int main(int argc, char *argv[])
     }
     Info << PsiCritic*epsh << " !!!!!!!!!!!!!      " << 9.*dx;
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ZAPIS PO OBLICZENIACH !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-//     snGradFunPsi(Psi, snGradPsi);
+     snGradFunPsi(Psi, snGradPsi);
 //     Info << snGradPsi << endl;
 //gradPsi == fvc::grad(Psi);
 //Info << gradPsi << endl;
@@ -594,4 +602,4 @@ int main(int argc, char *argv[])
 }
 
 // ************************************************************************* //
-// NNNNNNNNNNNNNNNNNNNEEEEEEEEEEEEEEEEEEEEEEEEWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
+// NNNNNNNNNNNNNNNNNNNNNNNNNNEEEEEEEEEEEEEEEEEEEEEEEEWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
